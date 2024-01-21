@@ -2,6 +2,9 @@
 
 #include <cstring>
 
+#define FreeRTOS 1
+#define ThreadSafe FreeRTOS
+
 template <typename BuffT>
 struct BufferLine
 {
@@ -27,17 +30,15 @@ public:
   /// Destructor
   ~BufferLine()
   {
-    if (_needFree)
-      free(_data);
+    free(_data);
   }
 
 protected:
   /// Constructor
-  BufferLine(BuffT *data, uint16_t length, uint32_t id, bool needFree)
+  BufferLine(BuffT *data, uint16_t length, uint32_t id)
       : _data(data),
         _id(id),
-        _length(length),
-        _needFree(needFree)
+        _length(length)
   {
   }
 
@@ -47,8 +48,6 @@ protected:
   const uint32_t _id;
   /// The length data
   const uint16_t _length;
-  /// Whether the data needs to be freed
-  const bool _needFree;
 };
 
 /// @brief Buffer line with editable content.
@@ -58,12 +57,11 @@ class EditableBufferLine : public BufferLine<BuffT>
 {
 public:
   /// @brief Constructor.
-  /// @param data Pointer to the data in buffer or pointer to the allocated data, if line in buffer is fragmented.
-  /// @param length Length of the buffer.
+  /// @param data from buffer line.
+  /// @param Length of the buffer line.
   /// @param id Identifier of the line.
-  /// @param needFree Flag indicating if the buffer needs to be freed (if line in buffer is fragmented).
-  EditableBufferLine(BuffT *data, uint16_t length, uint32_t id, bool needFree = false)
-      : BufferLine<BuffT>(data, length, id, needFree)
+  EditableBufferLine(BuffT *data, uint16_t length, uint32_t id)
+      : BufferLine<BuffT>(data, length, id)
   {
   }
 };
@@ -111,6 +109,12 @@ public:
       : _bufferSize(bufferSize),
         _maxLines(maxLines)
   {
+#ifdef ThreadSafe
+#if ThreadSafe == FreeRTOS
+    sync_mutex = xSemaphoreCreateMutex();
+#endif
+#endif
+
     buff = new BuffT[_bufferSize];
     lines = new BufferLineMarker[_maxLines];
   }
@@ -135,6 +139,8 @@ public:
     // therefore, we check that the new lines data does not occupy more than half of the buffer.
     if (length > _bufferSize / 2)
       return 0;
+
+    sync_lock();
 
     // Get the next index to write to.
     int16_t nextIndex = getNextIndex(_indexLastLine);
@@ -197,6 +203,8 @@ public:
     _indexLastLine = nextIndex;
     lines[_indexLastLine] = newLine;
 
+    sync_unlock();
+
     // Return the id of the new line.
     return newLine.id;
   }
@@ -207,7 +215,11 @@ public:
   {
     if (_indexFirstLine < 0)
       return nullptr;
-    return CreateBufferLine(_indexFirstLine);
+
+    sync_lock();
+    BufferLine<BuffT> *ret = CreateBufferLine(_indexFirstLine);
+    sync_unlock();
+    return ret;
   }
 
   /// @brief Read the last buffer line
@@ -216,7 +228,11 @@ public:
   {
     if (_indexLastLine < 0)
       return nullptr;
-    return CreateBufferLine(_indexLastLine);
+
+    sync_lock();
+    BufferLine<BuffT> *ret = CreateBufferLine(_indexLastLine);
+    sync_unlock();
+    return ret;
   }
 
   /// @brief Read the next buffer line with given id
@@ -226,16 +242,24 @@ public:
     if (_indexLastLine < 0)
       return nullptr;
 
+    sync_lock();
+    BufferLine<BuffT> *ret = nullptr;
+
     // Find the next line with given id
     for (int16_t index = _indexFirstLine; index != _indexLastLine; index = getNextIndex(index))
     {
       // If the current line has the given id, return it
       if (lines[index].id == id)
-        return CreateBufferLine(getNextIndex(index));
+      {
+        ret = CreateBufferLine(getNextIndex(index));
+        break;
+      }
     }
 
+    sync_unlock();
+
     // If there are no more lines, return nullptr
-    return nullptr;
+    return ret;
   }
 
   // Delete the current one, and return next line.
@@ -285,14 +309,25 @@ private:
   /// @brief Creates a BufferLine with a pointer to the data in the buffer, or if the data is fragmented, allocates memory and copies the fragments there
   /// @param index
   /// @return
+  uint16_t calculateLineLength(BufferLineMarker &line)
+  {
+    if (line.startIndex < line.endIndex)
+      return line.endIndex - line.startIndex + 1;
+    return _bufferSize - line.startIndex + line.endIndex + 1;
+  }
+
   BufferLine<BuffT> *CreateBufferLine(int16_t index)
   {
-    // If the line is not fragmented, return a new editable buffer line with pointer.
+    uint16_t length = calculateLineLength(lines[index]);
+    // If the line is not fragmented
     if (lines[index].startIndex < lines[index].endIndex)
-      return new EditableBufferLine<BuffT>(&buff[lines[index].startIndex], (lines[index].endIndex - lines[index].startIndex + 1), lines[index].id);
+    {
+      BuffT *lineData = (BuffT *)malloc(sizeof(BuffT) * length);
+      memcpy(lineData, buff + lines[index].startIndex, length * sizeof(BuffT));
+      return new EditableBufferLine<BuffT>(lineData, length, lines[index].id);
+    }
 
     // Otherwise, create a new line from fragments.
-    uint16_t length = _bufferSize - lines[index].startIndex + lines[index].endIndex + 1;
     BuffT *lineData = (BuffT *)malloc(sizeof(BuffT) * length);
 
     // Copy the existing data into the new line.
@@ -300,6 +335,35 @@ private:
     memcpy(lineData + _bufferSize - lines[index].startIndex, buff, (lines[index].endIndex + 1) * sizeof(BuffT));
 
     // Return a new editable buffer line from the new line data.
-    return new EditableBufferLine<BuffT>(lineData, length, lines[index].id, true);
+    return new EditableBufferLine<BuffT>(lineData, length, lines[index].id);
+  }
+
+  // FreeRTOS Thread sync mutex.
+#ifdef ThreadSafe
+#if ThreadSafe == FreeRTOS
+  SemaphoreHandle_t sync_mutex = nullptr;
+#endif
+#endif
+
+  /// @brief Thread lock
+  bool sync_lock()
+  {
+#ifdef ThreadSafe
+#if ThreadSafe == FreeRTOS
+    return sync_mutex ? (xSemaphoreTake(sync_mutex, portMAX_DELAY) == pdTRUE) : false;
+#else
+    return true;
+#endif
+#endif
+  }
+
+  /// @brief Thread unlock
+  void sync_unlock()
+  {
+#ifdef ThreadSafe
+#if ThreadSafe == FreeRTOS
+    xSemaphoreGive(sync_mutex);
+#endif
+#endif
   }
 };
