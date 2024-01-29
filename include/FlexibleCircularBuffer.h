@@ -1,9 +1,31 @@
 #pragma once
 
+#ifndef FlexibleCircularBuffer_h
+#define FlexibleCircularBuffer_h
+
 #include <cstring>
 
 #define FreeRTOS 1
 #define ThreadSafe FreeRTOS
+
+#ifdef ThreadSafe
+#if ThreadSafe == FreeRTOS
+
+#include "freertos/FreeRTOS.h"
+#include <freertos/semphr.h>
+#include <freertos/task.h>
+
+#endif
+#endif
+
+// #define DebugMode_FlexibleCircularBuffer
+
+#ifdef DebugMode_FlexibleCircularBuffer
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <filesystem>
+#endif
 
 template <typename BuffT>
 struct BufferLine
@@ -300,6 +322,28 @@ public:
     return ReadNext(id);
   }
 
+#ifdef DebugMode_FlexibleCircularBuffer
+
+  void SnapshotToFile(const char *outFileName, const char *firstHtmlFilePath, const char *lastHtmlFilePath)
+  {
+    std::ofstream file;
+    file.open(outFileName);
+    typename std::filesystem::path currentPath = std::filesystem::current_path();
+    typename std::filesystem::path fullPath = currentPath / outFileName;
+    std::cout << "Snapshot save to: " << fullPath << std::endl;
+    copyContent(file, firstHtmlFilePath);
+    file << "  <p style=\"margin: 4px;\">BufferSize: " << _bufferSize << ", MaxLines: " << _maxLines << "</p>\n";
+    file << "  <p style=\"margin: 4px;\">Buffer cells:</p>\n";
+    pushBuffer(file);
+    file << "  <p style=\"margin: 4px;\">IndexFirstLine: " << _indexFirstLine << ", IndexLastLine: " << _indexLastLine << "</p>\n";
+    file << "  <p style=\"margin: 4px;\">Lines:</p>";
+    pushLines(file);
+    copyContent(file, lastHtmlFilePath);
+    file.close();
+  }
+
+#endif
+
 private:
   // Pointer to the buffer
   BuffT *buff;
@@ -316,6 +360,150 @@ private:
 
   // Index of the last line
   int16_t _indexLastLine = -1;
+
+#ifdef DebugMode_FlexibleCircularBuffer
+
+  void copyContent(std::ofstream &to, const char *fromFilePath)
+  {
+    std::ifstream file(fromFilePath);
+
+    if (file.is_open())
+    {
+      std::string line;
+      while (std::getline(file, line))
+      {
+        to << line << std::endl;
+      }
+      file.close();
+    }
+  }
+
+  bool cellExistInLine(uint16_t cell, BufferLineMarker &line)
+  {
+    if (line.startIndex < line.endIndex)
+      return line.startIndex <= cell && cell <= line.endIndex;
+    return cell <= line.endIndex || line.startIndex <= cell;
+  }
+
+  BufferLineMarker *GetLineByCell(uint16_t cell)
+  {
+    if (_indexLastLine < 0)
+      return nullptr;
+
+    for (int16_t index = _indexFirstLine; true; index = getNextIndex(index))
+    {
+      if (cellExistInLine(cell, lines[index]))
+        return &lines[index];
+      if (index == _indexLastLine)
+        break;
+    }
+
+    return nullptr;
+  }
+
+  void pushBuffer(std::ofstream &file)
+  {
+    const uint16_t cellsInRow = 40;
+    uint16_t countRows = _bufferSize / cellsInRow;
+
+    BufferLineMarker *currentLine = nullptr;
+
+    file << "  <table id=\"Buffer\">\n";
+
+    for (uint16_t i = 0; i < _bufferSize; i++)
+    {
+
+      if (i > 0 && ((i % cellsInRow) == 0 || i == _bufferSize))
+        file << "    </tr>\n";
+
+      if ((i % cellsInRow) == 0)
+        file << "    <tr>\n";
+
+      if (currentLine == nullptr)
+        currentLine = GetLineByCell(i);
+      else if (!cellExistInLine(i, *currentLine))
+        currentLine = GetLineByCell(i);
+
+      file << "      <td class=\"buffer-cell";
+      if (currentLine != nullptr)
+      {
+        if (currentLine->startIndex == i)
+          file << " buffer-first-line-cell";
+        if (currentLine->endIndex == i)
+          file << " buffer-last-line-cell";
+        file << " color-" << currentLine->id % 10;
+      }
+      file << "\"><span>";
+      outBuffT(file, buff[i]);
+      file << "</span></td>\n";
+    }
+
+    file << "  </table>";
+  }
+
+  void outBuffT(std::ofstream &file, BuffT &cell)
+  {
+    file << cell;
+  }
+
+  void pushBuffT(std::ofstream &file, BuffT *data, uint16_t length)
+  {
+    for (uint16_t i = 0; i < length; i++)
+    {
+      file << outBuffT(file, data[i]);
+      if (i < length - 1)
+        file << ", ";
+    }
+  }
+
+  void pushLines(std::ofstream &file)
+  {
+    file << "  <table id=\"Lines\">\n";
+    file << "    <tr>\n";
+    file << "      <th><span>index</span></th>\n";
+    file << "      <th><span>id</span></th>\n";
+    file << "      <th><span>startIndex</span></th>\n";
+    file << "      <th><span>endIndex</span></th>\n";
+    file << "      <th><span>Length</span></td>\n";
+    file << "      <th><span>data</span></th>\n";
+    file << "    </tr>\n";
+
+    for (uint16_t i = 0; i < _maxLines; i++)
+    {
+      bool isActiveLine = false;
+      if (_indexLastLine >= 0)
+      {
+        if (_indexFirstLine <= _indexLastLine)
+          isActiveLine = i <= _indexLastLine && i >= _indexFirstLine;
+        else
+          isActiveLine = i <= _indexLastLine || _indexFirstLine <= i;
+      }
+
+      uint16_t length = 0;
+      BuffT *lineData = nullptr;
+      if (isActiveLine)
+        lineData = AllocLineData(lines[i], length);
+
+      file << "    <tr";
+      if (isActiveLine)
+        file << " class=\"color-" << lines[i].id % 10 << "\"";
+      file << ">\n";
+      file << "      <td><span>" << i << "</span></td>\n";
+      file << "      <td><span>" << lines[i].id << "</span></td>\n";
+      file << "      <td><span>" << lines[i].startIndex << "</span></td>\n";
+      file << "      <td><span>" << lines[i].endIndex << "</span></td>\n";
+      file << "      <td><span>" << length << "</span></td>\n";
+      file << "      <td><span>";
+      if (isActiveLine)
+        pushBuffT(file, lineData, length);
+      file << "</span></td>\n";
+      file << "    </tr>\n";
+
+      free(lineData);
+    }
+  }
+
+#endif
 
   /// @brief Get the next index in the text buffer.
   /// @param[in] index The current index.
@@ -352,25 +540,26 @@ private:
     return _bufferSize - line.startIndex + line.endIndex + 1;
   }
 
+  BuffT *AllocLineData(BufferLineMarker &line, uint16_t &length)
+  {
+    length = calculateLineLength(line);
+    BuffT *lineData = (BuffT *)malloc(sizeof(BuffT) * length);
+    // If the line is not fragmented
+    if (line.startIndex < line.endIndex)
+    {
+      memcpy(lineData, buff + line.startIndex, length * sizeof(BuffT));
+      return lineData;
+    }
+    // Otherwise, create a new line from fragments.
+    memcpy(lineData, buff + line.startIndex, (_bufferSize - line.startIndex) * sizeof(BuffT));
+    memcpy(lineData + _bufferSize - line.startIndex, buff, (line.endIndex + 1) * sizeof(BuffT));
+    return lineData;
+  }
+
   BufferLine<BuffT> *CreateBufferLine(int16_t index)
   {
-    uint16_t length = calculateLineLength(lines[index]);
-    // If the line is not fragmented
-    if (lines[index].startIndex < lines[index].endIndex)
-    {
-      BuffT *lineData = (BuffT *)malloc(sizeof(BuffT) * length);
-      memcpy(lineData, buff + lines[index].startIndex, length * sizeof(BuffT));
-      return new EditableBufferLine<BuffT>(lineData, length, lines[index].id);
-    }
-
-    // Otherwise, create a new line from fragments.
-    BuffT *lineData = (BuffT *)malloc(sizeof(BuffT) * length);
-
-    // Copy the existing data into the new line.
-    memcpy(lineData, buff + lines[index].startIndex, (_bufferSize - lines[index].startIndex) * sizeof(BuffT));
-    memcpy(lineData + _bufferSize - lines[index].startIndex, buff, (lines[index].endIndex + 1) * sizeof(BuffT));
-
-    // Return a new editable buffer line from the new line data.
+    uint16_t length = 0;
+    BuffT *lineData = AllocLineData(lines[index], length);
     return new EditableBufferLine<BuffT>(lineData, length, lines[index].id);
   }
 
@@ -404,39 +593,30 @@ private:
   }
 };
 
-/// @brief add data to last line. if char data type then remove \0 simbol
-/// @param id id of the last line of data, in order to make sure that the data will be written exactly in the required line, if a new line was created and you try to write in the old line, 0 will be returned
-/// @param data data
-/// @param length data length
-/// @return id of the created line. 0 if error
+#ifdef DebugMode_FlexibleCircularBuffer
+
 template <>
-uint32_t FlexibleCircularBuffer<char>::WriteToLastLine(uint32_t id, const char *data, uint16_t length)
+void FlexibleCircularBuffer<char>::outBuffT(std::ofstream &file, char &cell)
 {
-  if (_indexLastLine == -1 || id != lines[_indexLastLine].id ||
-      calculateLineLength(lines[_indexLastLine]) + length > _bufferSize / 2)
-    return 0;
-
-  // if the data fits into the buffer without fragmentation, then we simply write it to the buffer
-  if ((lines[_indexLastLine].endIndex + length) < _bufferSize)
-  {
-    memcpy(buff + lines[_indexLastLine].endIndex, data, length * sizeof(char));
-    lines[_indexLastLine].endIndex = lines[_indexLastLine].endIndex + length - 1;
-  }
+  if (cell == '\0')
+    file << "\\0";
+  else if (cell == '\n')
+    file << "\\n";
+  else if (cell == '\r')
+    file << "\\r";
+  else if (cell == '\t')
+    file << "\\t";
   else
-  {
-    // Otherwise, we need to split the line.
-    memcpy(buff + lines[_indexLastLine].endIndex, data,
-           (_bufferSize - lines[_indexLastLine].endIndex - 1) * sizeof(char));
-    lines[_indexLastLine].endIndex = _bufferSize - lines[_indexLastLine].endIndex - 2;
-    data += lines[_indexLastLine].endIndex;
-    length -= lines[_indexLastLine].endIndex + 1;
-
-    // Write the rest of the data to a new line.
-    memcpy(buff, data, length * sizeof(char));
-    lines[_indexLastLine].endIndex = length - 1;
-  }
-
-  FixIntersection(lines[_indexLastLine]);
-
-  return id;
+    file << cell;
 }
+
+template <>
+void FlexibleCircularBuffer<char>::pushBuffT(std::ofstream &file, char *data, uint16_t length)
+{
+  for (uint16_t i = 0; i < length; i++)
+    outBuffT(file, data[i]);
+}
+
+#endif
+
+#endif

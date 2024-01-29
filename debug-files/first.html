@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    :root {
+      --border-width: 3px;
+      --buffer-cell-size: 32px;
+    }
+
+    html,
+    body {
+      background-color: #181818;
+      color: #e5e5e5;
+      font-family: Cascadia Code;
+    }
+
+    table#Lines {
+      border-spacing: 0px;
+      border: 1px solid white;
+      text-align: center;
+    }
+
+    table#Lines tr th,
+    table#Lines tr td {
+      padding: 4px 8px;
+      border: 1px solid white;
+    }
+
+    .buffer-cell {
+      height: var(--buffer-cell-size);
+      overflow: hidden;
+      display: inline-block;
+      border-top: var(--border-width) solid white;
+      border-right: 1px solid #181818;
+      border-bottom: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + (2 * var(--border-width) - 1px));
+    }
+
+    table#Buffer {
+      border-spacing: 0px;
+    }
+
+    .buffer-cell span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+
+
+    .buffer-first-line-cell {
+      border-left: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + var(--border-width));
+    }
+
+    .buffer-last-line-cell {
+      border-right: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + var(--border-width));
+    }
+
+    .color-0 {
+      background: #f44336;
+    }
+
+    .color-1 {
+      background: #e91e63;
+    }
+
+    .color-2 {
+      background: #2196f3;
+    }
+
+    .color-3 {
+      background: #673ab7;
+    }
+
+    .color-4 {
+      background: #00bcd4;
+      color: #212121;
+    }
+
+    .color-5 {
+      background: #009688;
+    }
+
+    .color-6 {
+      background: #4caf50;
+    }
+
+    .color-7 {
+      background: #ffc107;
+      color: #212121;
+    }
+
+    .color-8 {
+      background: #795548;
+    }
+
+    .color-9 {
+      background: #545353;
+    }
+  </style>
+</head>
+
+<body>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    :root {
+      --border-width: 3px;
+      --buffer-cell-size: 32px;
+    }
+
+    html,
+    body {
+      background-color: #181818;
+      color: #e5e5e5;
+      font-family: Cascadia Code;
+    }
+
+    table#Lines {
+      border-spacing: 0px;
+      border: 1px solid white;
+      text-align: center;
+    }
+
+    table#Lines tr th,
+    table#Lines tr td {
+      padding: 4px 8px;
+      border: 1px solid white;
+    }
+
+    .buffer-cell {
+      height: var(--buffer-cell-size);
+      overflow: hidden;
+      display: inline-block;
+      border-top: var(--border-width) solid white;
+      border-right: 1px solid #181818;
+      border-bottom: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + (2 * var(--border-width) - 1px));
+    }
+
+    table#Buffer {
+      border-spacing: 0px;
+    }
+
+    .buffer-cell span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+
+
+    .buffer-first-line-cell {
+      border-left: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + var(--border-width));
+    }
+
+    .buffer-last-line-cell {
+      border-right: var(--border-width) solid white;
+      width: calc(var(--buffer-cell-size) + var(--border-width));
+    }
+
+    .color-0 {
+      background: #f44336;
+    }
+
+    .color-1 {
+      background: #e91e63;
+    }
+
+    .color-2 {
+      background: #2196f3;
+    }
+
+    .color-3 {
+      background: #673ab7;
+    }
+
+    .color-4 {
+      background: #00bcd4;
+      color: #212121;
+    }
+
+    .color-5 {
+      background: #009688;
+    }
+
+    .color-6 {
+      background: #4caf50;
+    }
+
+    .color-7 {
+      background: #ffc107;
+      color: #212121;
+    }
+
+    .color-8 {
+      background: #795548;
+    }
+
+    .color-9 {
+      background: #545353;
+    }
+  </style>
+</head>
+
+<body>
+  <p style="margin: 4px;">BufferSize: {BufferSize}, MaxLines: {MaxLines}</p>
+  <p style="margin: 4px;">Buffer cells:</p>
+  <table id="Buffer">
+    <tr>
+      <td class="buffer-cell buffer-first-line-cell color-7"><span>1</span></td>
+      <td class="buffer-cell color-7"><span>223</span></td>
+      <td class="buffer-cell buffer-last-line-cell color-7"><span>3</span></td>
+      <td class="buffer-cell buffer-first-line-cell color-1"><span>1</span></td>
+      <td class="buffer-cell color-1"><span>2</span></td>
+      <td class="buffer-cell buffer-last-line-cell color-1"><span>3</span></td>
+    </tr>
+  </table>
+  <p style="margin: 4px;">IndexFirstLine: , IndexLastLine: </p>
+  <p style="margin: 4px;">Lines:</p>
+
+  <table id="Lines">
+    <tr>
+      <th><span>index</span></th>
+      <th><span>id</span></th>
+      <th><span>startIndex</span></th>
+      <th><span>endIndex</span></th>
+      <th><span>Length</span></td>
+      <th><span>data</span></th>
+    </tr>
+    <tr class="color-7">
+      <td><span>0</span></td>
+      <td><span>0</span></td>
+      <td><span>0</span></td>
+      <td><span>5</span></td>
+      <td><span>5</span></td>
+      <td><span>abcd</span></td>
+    </tr>
+    <tr class="color-1">
+      <td><span>1</span></td>
+      <td><span>1</span></td>
+      <td><span>6</span></td>
+      <td><span>8</span></td>
+      <td><span>2</span></td>
+      <td><span>p</span></td>
+    </tr>
+  </table>
+
+</body>
+
+</html>
